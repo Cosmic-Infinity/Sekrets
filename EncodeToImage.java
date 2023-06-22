@@ -12,21 +12,34 @@ import java.awt.image.BufferedImage;
 
 class EncodeToImage{
     
-    private static String ext;
-    private static BufferedImage image;
-    private static int width;
-    private static int height;
+    private static String ext; //stores image extensiom
+    private static BufferedImage image; //stores image
+    private static int width; //stores image width
+    private static int height; //stores image height
+    private static int msg_bin_length; //stores the length of binary equivalent of the string
+    private static int msg_count; //stores the number of characters in the word 
     
     public static void main() throws IOException{
-        int key_length = 5;
+        //initialise
+        int key_length = 5; // there is no upper limit on the length of the key. But if the key is too long and the message too short, some digits of the key will go unused
         byte[] key = new byte[key_length*2];
-        String[] msg;
-
-        keyGen(key_length, key);
+        ext = "";
+        image = null;
+        width = 0;
+        height = 0;
+        msg_bin_length = 0;
+        //initialised
         
-        msg = message();
         
-        load();
+        load(); //loading image
+        
+        keyGen(key_length, key); //generating key, each digit of which which is stored as a byte array
+        
+        String[] msg = message(); //the binary of each character in message is stored in the cells of String array msg[] 
+        
+        test(key);
+        
+        
         
         
         
@@ -36,12 +49,20 @@ class EncodeToImage{
         //System.out.println(key[i]);
     }
     
+    private static void test(byte[] key){
+        long size = width*height;
+        long sum = 0;
+        for(int i=0; i<msg_bin_length; i = i++){
+            sum+= key[i%key.length]*key[i%key.length+1];
+        }
+        sum+=msg_count;
+    }
     
     private static void encodeData(){
         //modifying pixel value
-        System.out.println("Updating values");
-        width = image.getWidth();
-        height = image.getHeight();
+        //System.out.println("Updating values");
+        //width = image.getWidth();
+        //height = image.getHeight();
         for(int y = 0; y<height; y++){
             for(int x = 0; x<width; x++){
                 int p = image.getRGB(x,y);
@@ -109,14 +130,16 @@ class EncodeToImage{
         System.out.println("Enter your message : ");
         String msg = ob.nextLine();
         char[] msg_char = msg.toCharArray();
+        msg_count = msg_char.length;
         String[] msg_char_bin = new String[msg_char.length];
 
-        for(int i=0;i<msg_char.length;i++)
+        for(int i=0;i<msg_char.length;i++){
             msg_char_bin[i] = toBinary(msg_char[i]);
+            msg_bin_length+= (msg_char_bin[i]+"").length();
+        }
             
         return msg_char_bin;
     }
-
     private static String toBinary(char letter){
         String bin = "";
         for(int i = letter; i>0; i=i/2){
@@ -124,8 +147,6 @@ class EncodeToImage{
         }
         return bin;
     }
-    
-    
     private static void keyGen(int key_length, byte[] key_ar){
         Scanner ob = new Scanner(System.in);
         System.out.println("Enter "+key_length*2+" size key (numbers only).");
