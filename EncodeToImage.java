@@ -18,20 +18,25 @@ class EncodeToImage{
     private static int msg_count; //stores the number of characters in the word 
 
     public static void main() throws IOException{
-        //initialise
+
+        
+        initialise();
+        load(); //loading image
+        
         int key_length = 5; // there is no upper limit on the length of the key. But if the key is too long and the message too short, some digits of the key will go unused
         byte[] key = new byte[key_length*2];
-        ext = "";
-        image = null;
-        width = 0;
-        height = 0;
-        msg_bin_length = 0;
-        msg_count = 0;
-        //initialised
-
-        load(); //loading image
+        
         keyGen(key_length, key); //generating key, each digit of which which is stored as a byte array
         String[] msg = message(); //the binary of each character in message is stored in the cells of String array msg[] 
+        
+        System.out.println("Message binary :");
+        for(int i=0; i<msg.length; i++)
+            System.out.print(msg[i] + " ");
+            
+        System.out.println("\nKey Digits :");
+        for(int i=0; i<key.length; i++)
+            System.out.print(key[i] + " ");
+        
         if(! test(key)){
             System.out.println("This key is incompatible for the message. Try another key, or a different image.");
         }
@@ -46,14 +51,16 @@ class EncodeToImage{
 
     private static boolean test(byte[] key){
         
+        return true;
+        /*
         long sum = 0;
         for(int i=0; i<msg_bin_length; i++){
             sum=sum+ key[i%key.length]; // digit of the key is taken in sets of 2. the first digit says the number of pixels to skip. the second digit says how many times to skip the same number of pixels. after each skip the (message) data is encoded to either of the R G or B pixel of the image.
         }
         sum+=msg_count;
-
-        long size = width*height;
-        return (size < (sum - 100)); // checking if the key and message length combination exceeds the amount of pixels available on the image 
+        
+        return ((width*height) < (sum - 100)); // checking if the key and message length combination exceeds the amount of pixels available on the image 
+        */
     }
 
     static int x = 0, y = 0;
@@ -63,7 +70,7 @@ class EncodeToImage{
             for( ; x<width; x++){
                 if(f == message.length()){
                     return;
-                }
+                }                
 
                 x = x+key[kc];
                 if(x >= width){
@@ -82,58 +89,55 @@ class EncodeToImage{
                 int g = (p>>8)&0xff;
                 int b = p&0xff;
                 //int avg = (r+g+b)/3;
-                if(f%4 == 1){
-                    a = message.charAt(f) == 1? a/2 : a/4;
+
+                if(f%3 == 0){
+                    g=0;b=0;
+                    r = message.charAt(f) == '1'? r : r/6;
                 }
-                else if(f%4 == 2){
-                    r = message.charAt(f) == 1? r/2 : r/4;
+                else if(f%3 == 1){
+                    r=0;b=0;
+                    g = message.charAt(f) == '1'? g : g/6;
                 }
-                else if(f%4 == 3){
-                    g = message.charAt(f) == 1? g/2 : g/4;
-                }
-                else if(f%4 == 0){
-                    b = message.charAt(f) == 1? b/2 : b/4;
+                else if(f%3 == 2){
+                    g=0;r=0;
+                    b = message.charAt(f) == '1'? b : b/6;
                 }
 
                 f++;
                 p = (a<<24) | (r<<16) | (g<<8) | b;
                 image.setRGB(x, y, p);
+                
             }
         }
         //System.out.println("Finished modifying.");
     }
 
-    private static void encodeDataContinuous(String message){
+    private static void encodeDataContinuous(String size){
         int f = 0;
         for( ; y<height; y++){
             for( ; x<width; x++){
-                if(f == message.length()){
-                    return;
-                }
+                
                 int p = image.getRGB(x,y);
-                int a = (p>>24)&0xff;
-                int r = (p>>16)&0xff;
-                int g = (p>>8)&0xff;
+                int a = p>>>24;
+                int r = p>>>16;
+                int g = p>>>8;
                 int b = p&0xff;
                 //int avg = (r+g+b)/3;
-                if(f%4 == 1){
-                    a = message.charAt(f) == 1? a/2 : a/4;
-                }
-                else if(f%4 == 2){
-                    r = message.charAt(f) == 1? r/2 : r/4;
-                }
-                else if(f%4 == 3){
-                    g = message.charAt(f) == 1? g/2 : g/4;
-                }
-                else if(f%4 == 0){
-                    b = message.charAt(f) == 1? b/2 : b/4;
-                }
-
+                
+                a = 100;
+                r = size.charAt(f) == '1'? r : r/6;
+                g = 0;
+                b = 0;
+                
+                //System.out.println(message.charAt(f));
+                
                 f++;
 
-                
                 p = (a<<24) | (r<<16) | (g<<8) | b;
                 image.setRGB(x, y, p);
+                if(f == size.length()){
+                    return;
+                }
             }
         }
         //System.out.println("Finished modifying.");
@@ -141,28 +145,101 @@ class EncodeToImage{
 
     private static void encodeDataHelper(String[] message, byte[] key){
         for(int f = 0; f < msg_count; f++){
-
+            
+            System.out.println("Sent len : "+toBinary((char)message[f].length()));
             encodeDataContinuous(toBinary((char)message[f].length()));
-
+            
+            System.out.println("Sent Message : "+message[f]);
             encodeDataWithKey(message[f], key);
         }
-        
+
         printOutput();
 
     }
 
-    private static void printOutput(){
-        //image output sample
-        try {
-            File output_file = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "imageCOMPLETE" + ext);
-            ImageIO.write(image, "png", output_file);
-            System.out.println("Image printed.");
-        }
-        catch (IOException e) {
-            System.out.println("Error: " + e);
-        }
-    }
+    
 
+    private static void keyGen(int key_length, byte[] key_ar){
+        Scanner ob = new Scanner(System.in);
+        System.out.println("Enter "+key_length*2+" size key (numbers only).");
+
+        String key_ = "";
+        while(true){
+            //key_ = ob.next();
+            key_ = "2222222222";
+            try{
+                for(int i=0; i<key_.length(); i++){
+                    if(!Character.isDigit(key_.charAt(i)))
+                        throw new Exception("Key can contain only numbers");
+                }
+
+                if(key_.length()!=(key_length*2)){
+                    System.out.println("Invalid key size. Enter key of size "+key_length*2);
+                    continue;
+                }
+                break;
+            }catch(Exception e){
+                System.out.println("An ERROR occured.\n"+e);
+                System.out.println("Try Again");
+            }
+        }
+
+        for(int i=0; i<key_.length(); i++)
+            key_ar[i] = Byte.parseByte(key_.charAt(i)+"");
+    }
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    private static String toBinary(char letter){
+        String bin = "";
+        for(int i = letter; i>0; i=i/2){
+            bin = (i%2)+bin;
+        }
+        return bin;
+    }
+    
     private static void load()throws IOException{
         //load
         System.out.println("Loadig Image...");
@@ -188,6 +265,7 @@ class EncodeToImage{
             //File input = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.jpg");
             //File input = new File(System.getProperty("user.dir") + File.separator + "image.jpg");
             image = ImageIO.read(input);
+            System.out.println("\nColour Model : "+image.getColorModel()+"\n");
             width = image.getWidth();
             height = image.getHeight();
         }
@@ -196,14 +274,31 @@ class EncodeToImage{
         }
         System.out.println("Image loaded.");
     }
-
+    
+    private static void printOutput(){
+        //image output sample
+        try {
+            File output_file = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "imageCOMPLETE" + ext);
+            ImageIO.write(image, "png", output_file);
+            System.out.println("Image printed.");
+        }
+        catch (IOException e) {
+            System.out.println("Error: " + e);
+        }
+    }
+    
     private static String[] message(){
+        //takes message input
+        //stores each character of the message to msg_char[] (temp)
+        //stores charcacter count of message to msg_count
+        //storess the binary of each character to 'String msg_char_bin[]' ->> msg_char_bin[index] = [0100001]
+        
         Scanner ob = new Scanner(System.in);
         System.out.println("Enter your message : ");
         String msg = ob.nextLine();
         char[] msg_char = msg.toCharArray();
-        msg_count = msg_char.length;
-        String[] msg_char_bin = new String[msg_count];
+        /* */msg_count = msg_char.length;
+        /* */String[] msg_char_bin = new String[msg_count];
 
         for(int i=0;i<msg_count;i++){
             msg_char_bin[i] = toBinary(msg_char[i]);
@@ -212,40 +307,17 @@ class EncodeToImage{
 
         return msg_char_bin;
     }
-
-    private static String toBinary(char letter){
-        String bin = "";
-        for(int i = letter; i>0; i=i/2){
-            bin = (i%2)+bin;
-        }
-        return bin;
-    }
-
-    private static void keyGen(int key_length, byte[] key_ar){
-        Scanner ob = new Scanner(System.in);
-        System.out.println("Enter "+key_length*2+" size key (numbers only).");
-
-        String key_ = "";
-        while(true){
-            key_ = ob.next();
-            try{
-                for(int i=0; i<key_.length(); i++){
-                    if(!Character.isDigit(key_.charAt(i)))
-                        throw new Exception("Key can contain only numbers");
-                }
-
-                if(key_.length()!=(key_length*2)){
-                    System.out.println("Invalid key size. Enter key of size "+key_length*2);
-                    continue;
-                }
-                break;
-            }catch(Exception e){
-                System.out.println("An ERROR occured.\n"+e);
-                System.out.println("Try Again");
-            }
-        }
-
-        for(int i=0; i<key_.length(); i++)
-            key_ar[i] = Byte.parseByte(key_.charAt(i)+"");
+    
+    private static void initialise(){
+        //initialise
+        ext = "";
+        image = null;
+        width = 0;
+        height = 0;
+        msg_bin_length = 0;
+        msg_count = 0;
+        x=0;
+        y=0;
+        //initialised
     }
 }
