@@ -91,7 +91,7 @@ class EncodeToImage {
             }
             if (total_bits_encoded_in_one_key_cycle > 0) {
                 double avg_skip_per_payload_bit = (double) total_skip_actions_in_one_key_cycle
-                        / total_bits_encoded_in_one_key_cycle;
+                    / total_bits_encoded_in_one_key_cycle;
                 estimated_pixels_skipped_by_key = (long) (msg_bins_length * avg_skip_per_payload_bit);
             }
         }
@@ -110,8 +110,10 @@ class EncodeToImage {
         }
         while (y < height) {
             while (x < width) {
-                if (f == message.length())
+                if (f == message.length()){
+                    x++;
                     return;
+                }
 
                 while (key[kc + 1] == 0) {
                     kc += 2;
@@ -260,22 +262,22 @@ class EncodeToImage {
             ext = ".jpg";
             if (!(input.exists())) {
                 input = new File(
-                        System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.jpeg");
+                    System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.jpeg");
                 ext = ".jpeg";
             }
             if (!(input.exists())) {
                 input = new File(
-                        System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.png");
+                    System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.png");
                 ext = ".png";
             }
             if (!(input.exists())) {
                 input = new File(
-                        System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.gif");
+                    System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.gif");
                 ext = ".gif";
             }
             if (!(input.exists())) {
                 System.out.println(
-                        "No image file with name \"image\" found.\nNOTE: Only JPG/JPEG, PNG and GIF is supported.");
+                    "No image file with name \"image\" found.\nNOTE: Only JPG/JPEG, PNG and GIF is supported.");
                 System.exit(1);
             }
             // File input = new File(System.getProperty("user.home") + File.separator +
