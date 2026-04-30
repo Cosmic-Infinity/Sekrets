@@ -6,13 +6,6 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 
 class DecodeFromImage {
-    private static final int KEY_DIGIT_COUNT = 10;
-    private static final int HEADER_BIT_COUNT = 32;
-    private static final int DEBUG_OFF = 0;
-    private static final int DEBUG_WHITE = 1;
-    private static final int DEBUG_BLACK = 2;
-    private static final int DEBUG_CHANNEL = 3;
-    private static final int DEBUG_MODE = 3;
 
     private static final Scanner INPUT = new Scanner(System.in);
 
@@ -25,11 +18,15 @@ class DecodeFromImage {
     private static int keyCursor;
 
     public static void main(String[] args) throws IOException {
-        initialise();
-        loadImage();
+        try {
+            initialise();
+            loadImage();
 
-        byte[] key = readKey();
-        decodeMessage(key);
+            byte[] key = readKey();
+            decodeMessage(key);
+        } finally {
+            INPUT.close();
+        }
     }
 
     private static void initialise() {
@@ -52,7 +49,7 @@ class DecodeFromImage {
             }
 
             image = ImageIO.read(input);
-            if (DEBUG_MODE != DEBUG_OFF) {
+            if (SekretsUtil.DEBUG_MODE != 0) {
                 System.out.println("\nColour Model : " + image.getColorModel() + "\n");
             }
             imageWidth = image.getWidth();
@@ -64,7 +61,7 @@ class DecodeFromImage {
     }
 
     private static File selectNewestEncodedImage() {
-        File desktopFolder = new File(System.getProperty("user.home") + File.separator + "Desktop");
+        File desktopFolder = new File(SekretsUtil.getDesktopPath());
         File newestFile = null;
         long newestModifiedTime = Long.MIN_VALUE;
         File[] files = desktopFolder.listFiles();
@@ -89,39 +86,13 @@ class DecodeFromImage {
         while (true) {
             System.out.println("Enter your key (numbers only).");
             String keyText = INPUT.nextLine().trim();
-            if (!isValidKeyText(keyText)) {
-                System.out.println("Invalid key. Enter exactly " + KEY_DIGIT_COUNT + " digits, and make sure at least one run length is greater than zero.");
+            if (!SekretsUtil.isValidKeyText(keyText)) {
+                System.out.println("Invalid key. Enter exactly " + SekretsUtil.KEY_DIGIT_COUNT
+                        + " digits, and make sure at least one run length is greater than zero.");
                 continue;
             }
-            return parseKey(keyText);
+            return SekretsUtil.parseKey(keyText);
         }
-    }
-
-    private static boolean isValidKeyText(String keyText) {
-        if (keyText.length() != KEY_DIGIT_COUNT) {
-            return false;
-        }
-
-        boolean hasPositiveRunLength = false;
-        for (int i = 0; i < keyText.length(); i++) {
-            char digit = keyText.charAt(i);
-            if (!Character.isDigit(digit)) {
-                return false;
-            }
-            if ((i % 2 == 1) && digit > '0') {
-                hasPositiveRunLength = true;
-            }
-        }
-
-        return hasPositiveRunLength;
-    }
-
-    private static byte[] parseKey(String keyText) {
-        byte[] key = new byte[keyText.length()];
-        for (int i = 0; i < keyText.length(); i++) {
-            key[i] = Byte.parseByte(keyText.charAt(i) + "");
-        }
-        return key;
     }
 
     private static void decodeMessage(byte[] key) {
@@ -129,7 +100,7 @@ class DecodeFromImage {
         System.arraycopy(key, 0, originalKey, 0, key.length);
 
         StringBuilder headerBits = new StringBuilder();
-        for (int bitIndex = 0; bitIndex < HEADER_BIT_COUNT; bitIndex++) {
+        for (int bitIndex = 0; bitIndex < SekretsUtil.HEADER_BIT_COUNT; bitIndex++) {
             int bit = readSequentialBit();
             if (bit < 0) {
                 System.out.println("Image ended while reading header bits.");
@@ -140,26 +111,38 @@ class DecodeFromImage {
             logVerbose("Header bit " + bitIndex + " at (" + previousX() + "," + previousY() + "): " + bit);
         }
 
-        int obfuscatedLength = Integer.parseInt(headerBits.toString(), 2);
-        payloadByteLength = obfuscatedLength ^ deriveHeaderMask(key);
+        int obfuscatedLength = (int) Long.parseLong(headerBits.toString(), 2);
+        payloadByteLength = obfuscatedLength ^ SekretsUtil.deriveHeaderMask(key);
         System.out.println("Decoded payload byte length: " + payloadByteLength);
 
         byte[] payloadBytes = new byte[payloadByteLength];
         int payloadBitIndex = 0;
-        for (int byteIndex = 0; byteIndex < payloadByteLength; byteIndex++) {
-            int currentByte = 0;
-            for (int bitInByte = 0; bitInByte < 8; bitInByte++) {
+        int payloadBitCount = payloadByteLength * 8;
+
+        while (cursorY < imageHeight) {
+            while (cursorX < imageWidth) {
+                if (payloadBitIndex == payloadBitCount) {
+                    break;
+                }
+
                 int bit = readKeyedBit(key, originalKey, payloadBitIndex);
                 if (bit < 0) {
                     System.out.println("Image ended while reading payload bits.");
                     System.out.println("No message could be decoded.");
                     return;
                 }
-                currentByte = (currentByte << 1) | bit;
+
+                int byteIndex = payloadBitIndex / 8;
+                int bitOffset = 7 - (payloadBitIndex % 8);
+                payloadBytes[byteIndex] |= (byte) (bit << bitOffset);
                 payloadBitIndex++;
                 logVerbose("Payload bit " + payloadBitIndex + " at (" + cursorX + "," + cursorY + "): " + bit);
             }
-            payloadBytes[byteIndex] = (byte) currentByte;
+
+            if (payloadBitIndex == payloadBitCount) {
+                break;
+            }
+            cursorX = 0;
         }
 
         String decodedMessage = new String(payloadBytes, StandardCharsets.UTF_8);
@@ -187,14 +170,15 @@ class DecodeFromImage {
     }
 
     private static int readKeyedBit(byte[] key, byte[] originalKey, int payloadBitIndex) {
-        advanceKeyState(key, originalKey);
+        int[] keyCursorRef = { keyCursor };
+        SekretsUtil.advanceKeyState(key, originalKey, keyCursorRef);
+        keyCursor = keyCursorRef[0];
 
         cursorX += key[keyCursor];
         if (cursorX >= imageWidth) {
-            cursorX -= key[keyCursor];
-            int pixelsLeftInRow = imageWidth - cursorX;
-            cursorY++;
-            cursorX += (key[keyCursor] - pixelsLeftInRow);
+            int totalPixels = (int) (cursorX % imageWidth);
+            cursorY += cursorX / imageWidth;
+            cursorX = totalPixels;
             if (cursorY >= imageHeight) {
                 return -1;
             }
@@ -214,30 +198,8 @@ class DecodeFromImage {
         return blue & 1;
     }
 
-    private static void advanceKeyState(byte[] key, byte[] originalKey) {
-        while (key[keyCursor + 1] == 0) {
-            keyCursor += 2;
-            if (keyCursor >= key.length) {
-                System.arraycopy(originalKey, 0, key, 0, key.length);
-                keyCursor = 0;
-                break;
-            }
-        }
-        key[keyCursor + 1]--;
-    }
-
-    private static int deriveHeaderMask(byte[] key) {
-        int mask = 0x6d2b79f5;
-        for (byte digit : key) {
-            mask = Integer.rotateLeft(mask ^ (digit & 0xff), 5) + 0x9e3779b9;
-        }
-        return mask;
-    }
-
     private static void logVerbose(String message) {
-        if (DEBUG_MODE != DEBUG_OFF) {
-            System.out.println(message);
-        }
+        SekretsUtil.logVerbose(message, SekretsUtil.DEBUG_MODE);
     }
 
     private static int previousX() {

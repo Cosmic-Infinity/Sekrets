@@ -1,6 +1,7 @@
-/* Not all characters and languages are supported considering this is a console application.
- * ISO-8859-1 characters are supported in java, meaning all English and Latin characters can be worked with.
- * Emojis or certain special characters might not get read. I tried the program with Hindi, with varying degree of success.
+/*
+ * Although the underlying encoding is UTF-8, the console input/output may not handle all Unicode characters properly.
+ * Emojis or certain special characters might appear malformed. I tried the program with Hindi, with varying degree of success.
+ * The program works though, no information is lost, it's just a visual limitation of the console.
  */
 
 import java.util.Scanner;
@@ -14,24 +15,16 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 
 class EncodeToImage {
-    private static final int KEY_DIGIT_COUNT = 10;
-    private static final int KEY_PAIR_COUNT = KEY_DIGIT_COUNT / 2;
-    private static final int HEADER_BIT_COUNT = 32;
-    private static final int DEBUG_OFF = 0;
-    private static final int DEBUG_WHITE = 1;
-    private static final int DEBUG_BLACK = 2;
-    private static final int DEBUG_CHANNEL = 3;
-    private static final int DEBUG_MODE = 3;
     private static final int MAX_LOCK_RETRIES = 3;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Scanner INPUT = new Scanner(System.in);
 
-    private static String imageExtension;
     private static BufferedImage image;
     private static int imageWidth;
     private static int imageHeight;
     private static int payloadByteLength;
     private static int cursorX, cursorY, keyCursor;
+    private static String imageExtension;
 
     public static void main(String[] args) {
         try {
@@ -61,6 +54,9 @@ class EncodeToImage {
             System.out.println("Exception in main: " + e.getMessage());
             e.printStackTrace();
         }
+        finally {
+            INPUT.close();
+        }
     }
 
     private static void initialise() {
@@ -76,35 +72,38 @@ class EncodeToImage {
 
     private static void loadImage() throws IOException {
         System.out.println("Loading image...");
-        try {
-            File input = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.jpg");
-            imageExtension = ".jpg";
-            if (!input.exists()) {
-                input = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.jpeg");
-                imageExtension = ".jpeg";
-            }
-            if (!input.exists()) {
-                input = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.png");
-                imageExtension = ".png";
-            }
-            if (!input.exists()) {
-                input = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "image.gif");
-                imageExtension = ".gif";
-            }
-            if (!input.exists()) {
-                System.out.println("No image file with name \"image\" found.\nNOTE: Only JPG/JPEG, PNG and GIF is supported.");
-                System.exit(1);
-            }
-
-            image = ImageIO.read(input);
-            if (DEBUG_MODE != DEBUG_OFF) {
-                System.out.println("\nColour Model : " + image.getColorModel() + "\n");
-            }
-            imageWidth = image.getWidth();
-            imageHeight = image.getHeight();
-        } catch (IOException e) {
-            System.out.println("Error: " + e);
+        String desktopPath = SekretsUtil.getDesktopPath();
+        File input = new File(desktopPath + File.separator + "image.jpg");
+        if (!input.exists()) {
+            input = new File(desktopPath + File.separator + "image.jpeg");
         }
+        if (!input.exists()) {
+            input = new File(desktopPath + File.separator + "image.png");
+        }
+        if (!input.exists()) {
+            input = new File(desktopPath + File.separator + "image.gif");
+        }
+        if (!input.exists()) {
+            System.out.println(
+                    "No image file with name \"image\" found.\nNOTE: Only JPG/JPEG, PNG and GIF is supported.");
+            throw new IOException("Image file not found");
+        }
+
+        // Extract extension from the found file
+        String filename = input.getName();
+        int dotIndex = filename.lastIndexOf('.');
+        imageExtension = (dotIndex > 0) ? filename.substring(dotIndex + 1).toLowerCase() : "png";
+
+        image = ImageIO.read(input);
+        if (image == null) {
+            throw new IOException("Failed to read image: " + input.getName());
+        }
+
+        if (SekretsUtil.DEBUG_MODE != 0) {
+            System.out.println("\nColour Model : " + image.getColorModel() + "\n");
+        }
+        imageWidth = image.getWidth();
+        imageHeight = image.getHeight();
         System.out.println("Image loaded.");
     }
 
@@ -135,7 +134,7 @@ class EncodeToImage {
         while (true) {
             byte[] key = promptForKey();
             if (isKeyCompatible(key, payloadBytes.length)) {
-                logMajor("Using user-provided key: " + formatKey(key));
+                logMajor("Using user-provided key: " + SekretsUtil.formatKey(key));
                 return key;
             }
             System.out.println("This key is incompatible for the image and message. Try another key, use a smaller message, or use a larger image.");
@@ -144,75 +143,33 @@ class EncodeToImage {
 
     private static byte[] promptForKey() {
         while (true) {
-            System.out.println("Enter a " + KEY_DIGIT_COUNT + " digit key (numbers only).");
+            System.out.println("Enter a " + SekretsUtil.KEY_DIGIT_COUNT + " digit key (numbers only).");
             String keyText = INPUT.nextLine().trim();
 
-            if (!isValidKeyText(keyText)) {
-                System.out.println("Invalid key size or format. Enter exactly " + KEY_DIGIT_COUNT + " digits, and make sure at least one run length is greater than zero.");
+            if (!SekretsUtil.isValidKeyText(keyText)) {
+                System.out.println("Invalid key size or format. Enter exactly " + SekretsUtil.KEY_DIGIT_COUNT
+                        + " digits, and make sure at least one run length is greater than zero.");
                 continue;
             }
 
-            return parseKey(keyText);
+            return SekretsUtil.parseKey(keyText);
         }
-    }
-
-    private static boolean isValidKeyText(String keyText) {
-        if (keyText.length() != KEY_DIGIT_COUNT) {
-            return false;
-        }
-
-        boolean hasPositiveRunLength = false;
-        for (int i = 0; i < keyText.length(); i++) {
-            char digit = keyText.charAt(i);
-            if (!Character.isDigit(digit)) {
-                return false;
-            }
-            if ((i % 2 == 1) && digit > '0') {
-                hasPositiveRunLength = true;
-            }
-        }
-
-        return hasPositiveRunLength;
-    }
-
-    private static byte[] parseKey(String keyText) {
-        byte[] key = new byte[keyText.length()];
-        for (int i = 0; i < keyText.length(); i++) {
-            key[i] = Byte.parseByte(keyText.charAt(i) + "");
-        }
-        return key;
     }
 
     private static byte[] generateCompatibleAutoKey(byte[] payloadBytes) {
-        byte[] key = generateRandomKey();
+        byte[] key = SekretsUtil.generateRandomKey();
         if (!isKeyCompatible(key, payloadBytes.length)) {
-            key = buildMinimalKey();
+            key = SekretsUtil.buildMinimalKey();
         }
 
-        logMajor("Generated key: " + formatKey(key));
+        logMajor("Generated key: " + SekretsUtil.formatKey(key));
         return key;
     }
 
-    private static byte[] generateRandomKey() {
-        byte[] key = new byte[KEY_DIGIT_COUNT];
-        for (int pairIndex = 0; pairIndex < KEY_PAIR_COUNT; pairIndex++) {
-            key[pairIndex * 2] = 1;
-            key[pairIndex * 2 + 1] = (byte) (RANDOM.nextInt(9) + 1);
-        }
-        return key;
-    }
-
-    private static byte[] buildMinimalKey() {
-        byte[] key = new byte[KEY_DIGIT_COUNT];
-        for (int pairIndex = 0; pairIndex < KEY_PAIR_COUNT; pairIndex++) {
-            key[pairIndex * 2] = 0;
-            key[pairIndex * 2 + 1] = 1;
-        }
-        return key;
-    }
+    // generateRandomKey() and buildMinimalKey() are delegated to SekretsUtil
 
     private static boolean canFitWithoutKey(int payloadByteLength) {
-        long requiredBits = HEADER_BIT_COUNT + (long) payloadByteLength * 8L;
+        long requiredBits = SekretsUtil.HEADER_BIT_COUNT + (long) payloadByteLength * 8L;
         long availableBits = (long) imageWidth * imageHeight;
         return availableBits >= requiredBits;
     }
@@ -223,8 +180,8 @@ class EncodeToImage {
         }
 
         int payloadBitCount = payloadByteLength * 8;
-        int simulationX = HEADER_BIT_COUNT % imageWidth;
-        int simulationY = HEADER_BIT_COUNT / imageWidth;
+        int simulationX = SekretsUtil.HEADER_BIT_COUNT % imageWidth;
+        int simulationY = SekretsUtil.HEADER_BIT_COUNT / imageWidth;
         int simulationKeyCursor = 0;
         int currentRunLength = 0;
         int lastPixelIndex = -1;
@@ -248,10 +205,8 @@ class EncodeToImage {
 
             simulationX += workingKey[simulationKeyCursor];
             if (simulationX >= imageWidth) {
-                simulationX -= workingKey[simulationKeyCursor];
-                int pixelsLeftInRow = imageWidth - simulationX;
-                simulationY++;
-                simulationX += (workingKey[simulationKeyCursor] - pixelsLeftInRow);
+                simulationY += simulationX / imageWidth;
+                simulationX = simulationX % imageWidth;
                 if (simulationY >= imageHeight) {
                     return false;
                 }
@@ -276,17 +231,11 @@ class EncodeToImage {
         return true;
     }
 
-    private static String formatKey(byte[] key) {
-        StringBuilder formattedKey = new StringBuilder();
-        for (byte digit : key) {
-            formattedKey.append(digit);
-        }
-        return formattedKey.toString();
-    }
+    // formatKey() is delegated to SekretsUtil
 
     private static void encodeMessage(byte[] payloadBytes, byte[] key) {
-        int obfuscatedHeader = payloadBytes.length ^ deriveHeaderMask(key);
-        String payloadLengthBits = toFixedBinary(obfuscatedHeader, HEADER_BIT_COUNT);
+        int obfuscatedHeader = payloadBytes.length ^ SekretsUtil.deriveHeaderMask(key);
+        String payloadLengthBits = toFixedBinary(obfuscatedHeader, SekretsUtil.HEADER_BIT_COUNT);
         logVerbose("Helper ran");
         logVerbose("Sent count: " + payloadLengthBits);
         writeSequentialBits(payloadLengthBits);
@@ -335,13 +284,14 @@ class EncodeToImage {
                     return;
                 }
 
-                advanceKeyState(key, originalKey);
+                int[] keyCursorRef = { keyCursor };
+                SekretsUtil.advanceKeyState(key, originalKey, keyCursorRef);
+                keyCursor = keyCursorRef[0];
                 cursorX += key[keyCursor];
                 if (cursorX >= imageWidth) {
-                    cursorX -= key[keyCursor];
-                    int pixelsLeftInRow = imageWidth - cursorX;
-                    cursorY++;
-                    cursorX += (key[keyCursor] - pixelsLeftInRow);
+                    int totalPixels = (int) (cursorX % imageWidth);
+                    cursorY += cursorX / imageWidth;
+                    cursorX = totalPixels;
                     if (cursorY >= imageHeight) {
                         System.out.println("Image is too small.");
                         return;
@@ -363,17 +313,6 @@ class EncodeToImage {
         }
     }
 
-    private static void advanceKeyState(byte[] key, byte[] originalKey) {
-        while (key[keyCursor + 1] == 0) {
-            keyCursor += 2;
-            if (keyCursor >= key.length) {
-                System.arraycopy(originalKey, 0, key, 0, key.length);
-                keyCursor = 0;
-                break;
-            }
-        }
-        key[keyCursor + 1]--;
-    }
 
     private static boolean isPayloadBitOne(byte[] payloadBytes, int payloadBitIndex) {
         int byteIndex = payloadBitIndex / 8;
@@ -408,15 +347,11 @@ class EncodeToImage {
     }
 
     private static int applyDebugStyle(int alpha, int red, int green, int blue, int channelIndex, boolean bitIsOne) {
-        if (DEBUG_MODE == DEBUG_WHITE) {
+        if (SekretsUtil.DEBUG_MODE == 1) {
             return (alpha << 24) | (255 << 16) | (255 << 8) | 255;
-        }
-
-        if (DEBUG_MODE == DEBUG_BLACK) {
+        } else if (SekretsUtil.DEBUG_MODE == 2) {
             return (alpha << 24);
-        }
-
-        if (DEBUG_MODE == DEBUG_CHANNEL) {
+        } else if (SekretsUtil.DEBUG_MODE == 3) {
             int visibleValue = bitIsOne ? 255 : 64;
             if (channelIndex == 0) {
                 red = visibleValue;
@@ -445,26 +380,17 @@ class EncodeToImage {
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
-    private static int deriveHeaderMask(byte[] key) {
-        int mask = 0x6d2b79f5;
-        for (byte digit : key) {
-            mask = Integer.rotateLeft(mask ^ (digit & 0xff), 5) + 0x9e3779b9;
-        }
-        return mask;
-    }
-
     private static void logMajor(String message) {
         System.out.println(message);
     }
 
     private static void logVerbose(String message) {
-        if (DEBUG_MODE != DEBUG_OFF) {
-            System.out.println(message);
-        }
+        SekretsUtil.logVerbose(message, SekretsUtil.DEBUG_MODE);
     }
 
     private static void writeOutputImage() {
-        File fixedOutputFile = new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "imageCOMPLETE.png");
+        String desktopPath = SekretsUtil.getDesktopPath();
+        File fixedOutputFile = new File(desktopPath + File.separator + "imageCOMPLETE." + imageExtension);
 
         for (int retryCount = 0; retryCount < MAX_LOCK_RETRIES; retryCount++) {
             if (tryWriteImage(fixedOutputFile)) {
@@ -489,7 +415,7 @@ class EncodeToImage {
 
     private static boolean tryWriteImage(File outputFile) {
         try {
-            ImageIO.write(image, "png", outputFile);
+            ImageIO.write(image, imageExtension, outputFile);
             return true;
         } catch (IOException e) {
             return false;
@@ -507,6 +433,7 @@ class EncodeToImage {
     private static File buildRandomFallbackOutputFile() {
         int randomSuffix = RANDOM.nextInt(1000);
         String suffixText = String.format("%03d", randomSuffix);
-        return new File(System.getProperty("user.home") + File.separator + "Desktop" + File.separator + "imageCOMPLETE-" + suffixText + ".png");
+        String desktopPath = SekretsUtil.getDesktopPath();
+        return new File(desktopPath + File.separator + "imageCOMPLETE-" + suffixText + "." + imageExtension);
     }
 }
